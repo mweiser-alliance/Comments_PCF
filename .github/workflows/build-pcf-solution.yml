@@ -36,8 +36,7 @@ jobs:
         run: |
           dotnet tool install -g Microsoft.PowerApps.CLI.Tool
           echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          pac help | Out-Host
-
+          pac help | Out-Host   # don't use --version (non-zero exit sometimes)
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
@@ -56,22 +55,30 @@ jobs:
           cd solution
           pac solution init --publisher-name TheAlliance --publisher-prefix ta
       
-      - name: Add PCF control to solution (prefer .pcfproj, fallback to folder)
+      - name: Add PCF control to solution (prefer folder, fallback to .pcfproj)
         run: |
           cd solution
-          if (Test-Path ../Comments.pcfproj) {
+          $ErrorActionPreference = 'Stop'
+          if (Test-Path ../CommentsControl/ControlManifest.Input.xml) {
+            Write-Host "Using ../CommentsControl (folder contains ControlManifest.Input.xml)"
+            pac solution add-reference --path ../CommentsControl
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "Folder add-reference failed; trying .pcfproj if present…"
+              if (Test-Path ../Comments.pcfproj) {
+                pac solution add-reference --path ../Comments.pcfproj
+              } else {
+                throw "No .pcfproj to fall back to."
+              }
+            }
+          }
+          elseif (Test-Path ../Comments.pcfproj) {
             Write-Host "Using ../Comments.pcfproj"
             pac solution add-reference --path ../Comments.pcfproj
           }
-          elseif (Test-Path ../CommentsControl/ControlManifest.Input.xml) {
-            Write-Host "Using ../CommentsControl (folder contains ControlManifest.Input.xml)"
-            pac solution add-reference --path ../CommentsControl
-          }
           else {
-            Write-Error "No PCF project found. Ensure Comments.pcfproj exists at repo root OR ControlManifest.Input.xml exists at CommentsControl/."
+            Write-Error "No PCF project found. Ensure CommentsControl/ControlManifest.Input.xml or Comments.pcfproj exists."
             exit 1
           }
-
 
 
       - name: Build solution (Unmanaged + Managed)
@@ -79,6 +86,19 @@ jobs:
           cd solution
           msbuild /t:build /restore /p:Configuration=Debug
           msbuild /t:build /restore /p:Configuration=Release /p:PackageType=Managed
+
+      - name: Dump PAC logs on failure
+        if: failure()
+        run: |
+          $logs = Get-ChildItem "$env:USERPROFILE\.dotnet\tools" -Filter pac-log.txt -Recurse -ErrorAction SilentlyContinue
+          if ($logs) {
+            foreach ($l in $logs) {
+              Write-Host "=== PAC LOG: $($l.FullName) ==="
+              Get-Content $l.FullName -Raw | Write-Host
+            }
+          } else {
+            Write-Host "No pac-log.txt found."
+          }
 
       - name: Upload solution zips
         uses: actions/upload-artifact@v4
