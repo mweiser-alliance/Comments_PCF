@@ -55,13 +55,26 @@ jobs:
           mkdir solution
           cd solution
           pac solution init --publisher-name TheAlliance --publisher-prefix ta
-
-
-
-      - name: Add PCF control to solution
+      
+      - name: Add PCF control to solution (auto-detect path)
         run: |
           cd solution
-          pac solution add-reference --path ../CommentsControl
+          if (Test-Path ../CommentsControl/ControlManifest.Input.xml) {
+            Write-Host "Found ControlManifest.Input.xml under CommentsControl"
+            $ref = "../CommentsControl"
+          }
+          elseif (Test-Path ../Comments.pcfproj) {
+            Write-Host "Found .pcfproj at repo root"
+            $ref = "../Comments.pcfproj"
+          }
+          else {
+            Write-Error "No PCF project found. Repo tree follows:"
+            cd ..
+            Get-ChildItem -Recurse -File | Select-Object FullName | Out-Host
+            exit 1
+          }
+          pac solution add-reference --path $ref
+
 
       - name: Build solution (Unmanaged + Managed)
         run: |
