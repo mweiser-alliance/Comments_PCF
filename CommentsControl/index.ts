@@ -1,111 +1,205 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { IInputs, IOutputs } from "./generated/ManifestTypes";
-import { CommentsGrid, ICommentsGrid } from "./Comments";
-import * as React from "react";
-import DataSetInterfaces = ComponentFramework.PropertyHelper.DataSetApi;
-type DataSet = ComponentFramework.PropertyTypes.DataSet;
 
-export class CommentsControl implements ComponentFramework.ReactControl<IInputs, IOutputs> {
-    private theComponent: ComponentFramework.ReactControl<IInputs, IOutputs>;
-    private notifyOutputChanged: () => void;
-    private _context: ComponentFramework.Context<IInputs>;
-    private _currentUserName: string;
-    private _currentUserId: string;
-    private _currentEntityId: string;
-    private _currentEntityName: string;
-    private _webAPI: any;
-    private _messageProperty: any;
-    private _userProperty: any;
-    private _dateProperty: any;
-    private _parentLookUpProperty: any
+/**
+ * CommentsControl - tailored to your schema:
+ *  - MessageProperty  -> ta_Text
+ *  - DateProperty     -> ta_MessageDate
+ *  - UserProperty     -> ta_User
+ *  - ParentLookUpProp -> ta_SolutionCenterRequest   // change to ta_EmployerRequest if needed
+ */
+const MESSAGE_PROP = "ta_Text";
+const DATE_PROP    = "ta_MessageDate";
+const USER_PROP    = "ta_User";
+const PARENT_PROP  = "ta_SolutionCenterRequest"; // <-- switch to "ta_EmployerRequest" if that's your parent column
 
-    /**
-     * Empty constructor.
-     */
-    constructor() { }
+export class CommentsControl implements ComponentFramework.StandardControl<IInputs, IOutputs> {
+  private _context!: ComponentFramework.Context<IInputs>;
+  private _container!: HTMLDivElement;
+  private _input!: HTMLTextAreaElement;
+  private _isInitialized = false;
 
-    /**
-     * Used to initialize the control instance. Controls can kick off remote server calls and other initialization actions here.
-     * Data-set values are not initialized here, use updateView.
-     * @param context The entire property bag available to control via Context Object; It contains values as set up by the customizer mapped to property names defined in the manifest, as well as utility functions.
-     * @param notifyOutputChanged A callback method to alert the framework that the control has new outputs ready to be retrieved asynchronously.
-     * @param state A piece of data that persists in one session for a single user. Can be set at any point in a controls life cycle by calling 'setControlState' in the Mode interface.
-     */
-    public init(
-        context: ComponentFramework.Context<IInputs>,
-        notifyOutputChanged: () => void,
-        state: ComponentFramework.Dictionary
-    ): void {
-        this._context = context;
-        this._currentUserName = context.userSettings.userName;
-        this._currentUserId = context.userSettings.userId;
-        this._currentEntityId = (context.mode as any).contextInfo.entityId;
-        this._currentEntityName = (context.mode as any).contextInfo.entityTypeName;
-        this._webAPI = context.webAPI;
-        this._messageProperty = context.parameters.MessageProperty.raw,
-            this._userProperty = context.parameters.UserProperty.raw,
-            this._dateProperty = context.parameters.DateProperty.raw,
-            this._parentLookUpProperty = context.parameters.ParentLookUpProperty.raw      
-        this.notifyOutputChanged = notifyOutputChanged;
+  public init(
+    context: ComponentFramework.Context<IInputs>,
+    _notifyOutputChanged: () => void,
+    _state: ComponentFramework.Dictionary,
+    container: HTMLDivElement
+  ): void {
+    this._context = context;
+    this._container = container;
+
+    // Root
+    this._container.classList.add("comments-root");
+
+    // List
+    const list = document.createElement("div");
+    list.className = "comments-list";
+    list.setAttribute("role", "log");
+
+    // Input
+    const inputWrap = document.createElement("div");
+    inputWrap.className = "comments-input-wrap";
+
+    this._input = document.createElement("textarea");
+    this._input.className = "comments-input";
+    this._input.rows = 1;
+    this._input.placeholder = "Write a comment and press Enter…";
+    this._input.addEventListener("keydown", (e) => this.onKeyDown(e));
+
+    inputWrap.appendChild(this._input);
+    this._container.appendChild(list);
+    this._container.appendChild(inputWrap);
+
+    this._isInitialized = true;
+  }
+
+  public updateView(context: ComponentFramework.Context<IInputs>): void {
+    this._context = context;
+    if (!this._isInitialized) return;
+
+    const list = this._container.querySelector(".comments-list") as HTMLDivElement;
+    if (!list) return;
+
+    list.innerHTML = "";
+
+    const ds = context.parameters.dataset;
+    if (!ds || ds.loading) return;
+
+    // Render oldest -> newest; use your writable date if present, else Created On
+    const sorted = Object.keys(ds.records)
+      .map((k) => ds.records[k])
+      .sort((a, b) => {
+        const ad = (a.getValue(DATE_PROP) as any) ?? a.getValue("createdon");
+        const bd = (b.getValue(DATE_PROP) as any) ?? b.getValue("createdon");
+        const at = ad ? new Date(ad).getTime() : 0;
+        const bt = bd ? new Date(bd).getTime() : 0;
+        return at - bt;
+      });
+
+    for (const rec of sorted) {
+      const row = document.createElement("div");
+      row.className = "comment-row";
+
+      const body = document.createElement("div");
+      body.className = "comment-body";
+      body.textContent = (rec.getFormattedValue(MESSAGE_PROP) as string) ?? "";
+
+      const meta = document.createElement("div");
+      meta.className = "comment-meta";
+      const userTxt = (rec.getFormattedValue(USER_PROP) as string) ?? "";
+      const dateTxt =
+        (rec.getFormattedValue(DATE_PROP) as string) ??
+        (rec.getFormattedValue("createdon") as string) ??
+        "";
+      meta.textContent = [userTxt, dateTxt].filter(Boolean).join(" · ");
+
+      row.appendChild(body);
+      row.appendChild(meta);
+      list.appendChild(row);
+    }
+  }
+
+  public getOutputs(): IOutputs { return {}; }
+
+  public destroy(): void {
+    // no-op
+  }
+
+  // ===== Internals =====
+
+  private async onKeyDown(e: KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      // critical: prevent the form/subgrid from swallowing Enter
+      e.preventDefault();
+      e.stopPropagation();
+
+      const text = (this._input.value || "").trim();
+      if (!text) return;
+
+      try {
+        await this.createComment(text);
+        this._input.value = "";
+        await this._context.parameters.dataset.refresh();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to create comment", err);
+      }
+    }
+  }
+
+  private async createComment(messageText: string): Promise<void> {
+    const ctx = this._context;
+
+    // Determine child entity (Chat) from dataset binding
+    const chatEntityLogicalName =
+      ctx.parameters.dataset.getTargetEntityType &&
+      ctx.parameters.dataset.getTargetEntityType();
+
+    if (!chatEntityLogicalName) {
+      throw new Error("Cannot determine chat entity from dataset binding.");
     }
 
-    /**
-     * Called when any value in the property bag has changed. This includes field values, data-sets, global values such as container height and width, offline status, control metadata values such as label, visible, etc.
-     * @param context The entire property bag available to control via Context Object; It contains values as set up by the customizer mapped to names defined in the manifest, as well as utility functions
-     * @returns ReactElement root react element for the control
-     */
-    public updateView(context: ComponentFramework.Context<IInputs>): React.ReactElement {
-        this._context = context;
-        let pageRows = this.getAllPageRecords(this._context.parameters.dataset)
-        const props: ICommentsGrid = {
-            pagerows: pageRows,
-            currentUserName: this._currentUserName,
-            currentUserId: this._currentUserId,
-            currentEntityId: this._currentEntityId,
-            currentEntityTypeName: this._currentEntityName,
-            webAPI: this._webAPI,
-            dataset: this._context.parameters.dataset,
-            messageProperty: this._messageProperty,
-            dateProperty: this._dateProperty,
-            userProperty: this._userProperty,
-            parentLookUpProperty: this._parentLookUpProperty
+    // Resolve current user id and parent record (entity name + id)
+    const userId = (ctx.userSettings.userId || "").replace(/[{}]/g, "");
+    const { parentEntityName, parentId } = this.getParentFromPageContext(ctx);
+
+    if (!parentEntityName || !parentId) {
+      throw new Error("Could not determine the parent record from page context.");
+    }
+
+    // Resolve PLURAL entity set names for @odata.bind
+    const sysUserMeta = await (ctx.utils as any).getEntityMetadata("systemuser");
+    const parentMeta  = await (ctx.utils as any).getEntityMetadata(parentEntityName);
+    const systemUsersSet = sysUserMeta.EntitySetName; // e.g., "systemusers"
+    const parentSet      = parentMeta.EntitySetName;  // e.g., "ta_solutioncenterrequests"
+
+    // Build payload
+    const payload: Record<string, any> = {};
+    payload[MESSAGE_PROP] = messageText;
+    payload[DATE_PROP]    = new Date().toISOString();
+    payload[`${USER_PROP}@odata.bind`]   = `/${systemUsersSet}(${userId})`;
+    payload[`${PARENT_PROP}@odata.bind`] = `/${parentSet}(${parentId})`;
+
+    // Create row
+    await ctx.webAPI.createRecord(chatEntityLogicalName, payload);
+  }
+
+  /**
+   * Tries multiple strategies to get the parent record info when the control is hosted on a subgrid within a form.
+   */
+  private getParentFromPageContext(ctx: ComponentFramework.Context<IInputs>): { parentEntityName: string; parentId: string } {
+    // 1) Preferred: context.mode.contextInfo (newer PCF runtimes)
+    const ci = (ctx.mode as any)?.contextInfo;
+    if (ci?.entityTypeName && ci?.entityId) {
+      return {
+        parentEntityName: ci.entityTypeName as string,
+        parentId: (ci.entityId as string).replace(/[{}]/g, "")
+      };
+    }
+
+    // 2) Fallback: legacy Xrm.Page (if available)
+    const XrmAny = (window as any).Xrm;
+    if (XrmAny?.Page?.data?.entity) {
+      const id = XrmAny.Page.data.entity.getId?.() || "";
+      const name = XrmAny.Page.data.entity.getEntityName?.() || "";
+      if (id && name) {
+        return {
+          parentEntityName: name as string,
+          parentId: (id as string).replace(/[{}]/g, "")
         };
-        return React.createElement(
-            CommentsGrid, props
-        );
+      }
     }
 
-    /**
-     * It is called by the framework prior to a control receiving new data.
-     * @returns an object based on nomenclature defined in manifest, expecting object[s] for property marked as "bound" or "output"
-     */
-    public getOutputs(): IOutputs {
-        return {};
-    }
+    // 3) Fallback: parse from URL (etn + id)
+    try {
+      const url = new URL(window.location.href);
+      const etn = url.searchParams.get("etn");
+      const id  = url.searchParams.get("id");
+      if (etn && id) {
+        return { parentEntityName: etn, parentId: id.replace(/[{}]/g, "") };
+      }
+    } catch { /* ignore */ }
 
-    /**
-     * Called when the control is to be removed from the DOM tree. Controls should use this call for cleanup.
-     * i.e. cancelling any pending remote calls, removing listeners, etc.
-     */
-    public destroy(): void {
-        // Add code to cleanup control if necessary
-    }
-
-    private getAllPageRecords(gridParam: DataSet) {
-        let functionName = "loadPagingRecords";
-        let pagingDataRows: any = [];
-        let currentPageRecordsID = gridParam.sortedRecordIds;
-        let columnsOnView = gridParam.columns;
-        try {
-            for (const pointer in currentPageRecordsID) {
-                pagingDataRows[pointer] = {}
-                pagingDataRows[pointer]["key"] = currentPageRecordsID[pointer];
-                columnsOnView.forEach((columnItem: any, index) => {
-                    pagingDataRows[pointer][columnItem.name] = gridParam.records[currentPageRecordsID[pointer]].getFormattedValue(columnItem.name);
-                });
-            }
-        } catch (error) {
-            console.log(functionName + "" + error);
-        }
-        return pagingDataRows;
-    }
+    return { parentEntityName: "", parentId: "" };
+  }
 }

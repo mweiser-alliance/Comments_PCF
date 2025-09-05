@@ -1,0 +1,15 @@
+{
+  "name": "comments-control",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "pcf-scripts build",
+    "start": "pcf-scripts start",
+    "clean": "pcf-scripts clean"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.13",
+    "pcf-scripts": "^1.48.2",
+    "typescript": "^5.9.2"
+  }
+}

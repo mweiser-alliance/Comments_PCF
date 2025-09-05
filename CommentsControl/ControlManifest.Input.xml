@@ -1,25 +1,22 @@
-<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8"?>
 <manifest>
-  <control namespace="dev" constructor="CommentsControl" version="0.0.1" display-name-key="CommentsControl" description-key="CommentsControl description" control-type="virtual" >  
-    <external-service-usage enabled="false">    
-    </external-service-usage>   
-    <data-set name="dataset" display-name-key="Dataset_Display_Key" cds-data-set-options="displayCommandBar:true;displayViewSelector:true;displayQuickFind:true">     
-    </data-set>
-    <property name="MessageProperty" display-name-key="MessageProperty"
-    description-key="Schema Name of table column for message column" of-type="SingleLine.Text" usage="input" required="true" />
-    <property name="DateProperty" display-name-key="DateProperty"
-    description-key="Schema Name of table column for date column" of-type="SingleLine.Text" usage="input" required="true" />
-    <property name="UserProperty" display-name-key="UserProperty"
-    description-key="Schema Name of table column for user column" of-type="SingleLine.Text" usage="input" required="true" />
-    <property name="ParentLookUpProperty" display-name-key="ParentLookUpProperty"
-    description-key="Schema Name of table column for Parent lookup column" of-type="SingleLine.Text" usage="input" required="true" />
+  <control
+    namespace="Comments"
+    constructor="CommentsControl"
+    version="1.0.2"
+    control-type="standard"
+    display-name-key="Comments_Control_Display_Name"
+    description-key="Comments_Control_Description">
+    <data-set
+      name="dataset"
+      display-name-key="Chat_Dataset_Display_Name"
+      description-key="Chat_Dataset_Description" />
     <resources>
-      <code path="index.ts" order="1"/>
-      <platform-library name="React" version="16.8.6" />
-      <platform-library name="Fluent" version="8.29.0" />      
-    </resources>    
-    <feature-usage>      
+      <code path="index.ts" order="1" />
+      <resx path="strings/strings.resx" version="1.0.0" />
+    </resources>
+    <feature-usage>
       <uses-feature name="WebAPI" required="true" />
-    </feature-usage>   
+    </feature-usage>
   </control>
 </manifest>

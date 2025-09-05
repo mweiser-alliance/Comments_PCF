@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "es5",
+    "module": "esnext",
+    "lib": ["es5", "es2015", "dom"],
+    "moduleResolution": "node",
+    "strict": false,
+    "skipLibCheck": true,
+    "sourceMap": true
+  },
+  "include": ["./**/*.ts", "./**/*.tsx", "./types/**/*.d.ts"],
+  "exclude": ["node_modules", "out"]
+}
