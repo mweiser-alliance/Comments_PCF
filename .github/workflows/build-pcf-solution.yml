@@ -42,6 +42,14 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Verify PCF project layout
+        run: |
+          if (!(Test-Path "CommentsControl/ControlManifest.Input.xml")) {
+            Write-Error "ControlManifest.Input.xml not found at CommentsControl/. Fix your repo layout and commit."
+            exit 1
+          }
+          Get-ChildItem -Recurse -File CommentsControl | Select-Object FullName | Out-Host
+
       - name: Create solution skeleton
         run: |
           mkdir solution
