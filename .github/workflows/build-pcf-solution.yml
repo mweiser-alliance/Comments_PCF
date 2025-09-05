@@ -56,24 +56,22 @@ jobs:
           cd solution
           pac solution init --publisher-name TheAlliance --publisher-prefix ta
       
-      - name: Add PCF control to solution (auto-detect path)
+      - name: Add PCF control to solution (prefer .pcfproj, fallback to folder)
         run: |
           cd solution
-          if (Test-Path ../CommentsControl/ControlManifest.Input.xml) {
-            Write-Host "Found ControlManifest.Input.xml under CommentsControl"
-            $ref = "../CommentsControl"
+          if (Test-Path ../Comments.pcfproj) {
+            Write-Host "Using ../Comments.pcfproj"
+            pac solution add-reference --path ../Comments.pcfproj
           }
-          elseif (Test-Path ../Comments.pcfproj) {
-            Write-Host "Found .pcfproj at repo root"
-            $ref = "../Comments.pcfproj"
+          elseif (Test-Path ../CommentsControl/ControlManifest.Input.xml) {
+            Write-Host "Using ../CommentsControl (folder contains ControlManifest.Input.xml)"
+            pac solution add-reference --path ../CommentsControl
           }
           else {
-            Write-Error "No PCF project found. Repo tree follows:"
-            cd ..
-            Get-ChildItem -Recurse -File | Select-Object FullName | Out-Host
+            Write-Error "No PCF project found. Ensure Comments.pcfproj exists at repo root OR ControlManifest.Input.xml exists at CommentsControl/."
             exit 1
           }
-          pac solution add-reference --path $ref
+
 
 
       - name: Build solution (Unmanaged + Managed)
