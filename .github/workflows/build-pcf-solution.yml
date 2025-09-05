@@ -46,7 +46,9 @@ jobs:
         run: |
           mkdir solution
           cd solution
-          pac solution init --publisher-name "The Alliance" --publisher-prefix ta
+          pac solution init --publisher-name TheAlliance --publisher-prefix ta
+
+
 
       - name: Add PCF control to solution
         run: |
