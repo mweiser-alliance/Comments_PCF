@@ -1,22 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest>
+<manifest xmlns="http://schemas.microsoft.com/PowerApps/2020/ControlManifest">
   <control
     namespace="Comments"
     constructor="CommentsControl"
-    version="1.0.2"
+    version="1.0.3"
     control-type="standard"
     display-name-key="Comments_Control_Display_Name"
     description-key="Comments_Control_Description">
+
+    <!-- Dataset bound to your Chat subgrid -->
     <data-set
       name="dataset"
       display-name-key="Chat_Dataset_Display_Name"
       description-key="Chat_Dataset_Description" />
+
     <resources>
       <code path="index.ts" order="1" />
       <resx path="strings/strings.resx" version="1.0.0" />
     </resources>
+
     <feature-usage>
       <uses-feature name="WebAPI" required="true" />
     </feature-usage>
   </control>
 </manifest>
+
