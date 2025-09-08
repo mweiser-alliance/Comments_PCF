@@ -83,6 +83,35 @@ jobs:
           cd solution
           pac solution init --publisher-name TheAlliance --publisher-prefix ta
 
+          - name: Set solution identity (name, display name, version)
+          run: |
+            $solPath = Resolve-Path ./solution/src/Other/Solution.xml
+            [xml]$sol = Get-Content $solPath
+        
+            # 1) UniqueName must be globally unique in your env
+            $sol.ImportExportXml.SolutionManifest.UniqueName = 'ta_comments_control_redux'
+        
+            # 2) Display name (EN-US). Create node if it doesn't exist.
+            $ln = $sol.SelectSingleNode('//LocalizedName[@languagecode="1033"]')
+            if (-not $ln) {
+              $lns = $sol.SelectSingleNode('//LocalizedNames')
+              if (-not $lns) {
+                $lns = $sol.CreateElement('LocalizedNames')
+                $sol.ImportExportXml.SolutionManifest.AppendChild($lns) | Out-Null
+              }
+              $ln = $sol.CreateElement('LocalizedName')
+              $ln.SetAttribute('languagecode','1033')
+              $lns.AppendChild($ln) | Out-Null
+            }
+            $ln.SetAttribute('description','Comments Control Redux')
+        
+            # 3) Optional: bump version (format: major.minor.build.revision)
+            $sol.ImportExportXml.SolutionManifest.Version = '1.0.0.0'
+        
+            $sol.Save($solPath)
+            Write-Host "Updated Solution.xml -> UniqueName=ta_comments_control_redux, Display='Comments Control Redux', Version=1.0.0.0"
+
+
       - name: Add PCF to solution by editing .cdsproj (namespace-safe)
         run: |
           $solutionDir = Resolve-Path ./solution
@@ -129,13 +158,21 @@ jobs:
           msbuild /t:build /restore /p:Configuration=Debug
           msbuild /t:build /restore /p:Configuration=Release /p:PackageType=Managed
 
+      - name: Rename zips to friendly names
+        run: |
+          $un = Get-ChildItem "solution\bin\Debug\*.zip"    | Select-Object -First 1
+          $mn = Get-ChildItem "solution\bin\Release\*.zip"  | Select-Object -First 1
+          if ($un) { Copy-Item $un.FullName "solution\bin\Comments_Control_Redux_Unmanaged.zip" -Force }
+          if ($mn) { Copy-Item $mn.FullName "solution\bin\Comments_Control_Redux_Managed.zip"   -Force }
+
+
       - name: Upload solution zips
         uses: actions/upload-artifact@v4
         with:
           name: pcf-solution-zips
           path: |
-            solution\bin\Debug\*.zip
-            solution\bin\Release\*.zip
+            solution\bin\Comments_Control_Redux_Unmanaged.zip
+            solution\bin\Comments_Control_Redux_Managed.zip
 
       - name: Dump PAC logs on failure
         if: failure()
