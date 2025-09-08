@@ -30,9 +30,9 @@ jobs:
 
       - name: Install Power Platform CLI (pac)
         run: |
-          dotnet tool install -g Microsoft.PowerApps.CLI.Tool
+          dotnet tool install -g Microsoft.PowerApps.CLI.Tool --version 1.44.4
           echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          pac help | Out-Host   # don't use --version (can exit non-zero)
+          pac help | Out-Host
 
       - name: Scaffold clean PCF project in CI (dataset)
         run: |
@@ -103,32 +103,12 @@ jobs:
           $sol.Save($solPath)
           Write-Host "Updated Solution.xml -> UniqueName=ta_comments_control_redux, Display='Comments Control Redux'"
 
-      - name: Add PCF to solution by editing .cdsproj (namespace-safe)
+      - name: Add PCF control to solution (PAC add-reference)
         run: |
-          $solutionDir = Resolve-Path ./solution
-          $cdsproj = Get-ChildItem $solutionDir -Filter *.cdsproj | Select-Object -First 1
-          if (-not $cdsproj) { throw "No .cdsproj found under $solutionDir" }
-          $manifestAbs = (Resolve-Path ./ci_pcf/CommentsControl/ControlManifest.Input.xml).Path
-          $relPath = [System.IO.Path]::GetRelativePath($solutionDir.Path, $manifestAbs)
-          Write-Host "Using cdsproj: $($cdsproj.FullName)"
-          Write-Host "Adding PCF manifest (relative): $relPath"
-          [xml]$xml = Get-Content $cdsproj.FullName
-          $proj = $xml.Project
-          $ns  = $proj.NamespaceURI
-          $create = { param($name) $xml.CreateElement($name, $ns) }
-          $nsmgr = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
-          $nsmgr.AddNamespace("msb", $ns)
-          $ig = $xml.SelectSingleNode("//msb:ItemGroup[msb:PowerAppsComponentFrameworkProject]", $nsmgr)
-          if (-not $ig) {
-            $ig = & $create "ItemGroup"
-            $proj.AppendChild($ig) | Out-Null
-          }
-          $pcfItem = & $create "PowerAppsComponentFrameworkProject"
-          $null = $pcfItem.SetAttribute("Include", $relPath)
-          $ig.AppendChild($pcfItem) | Out-Null
-          $xml.Save($cdsproj.FullName)
-          Write-Host "=== Updated cdsproj (tail) ==="
-          Get-Content $cdsproj.FullName | Select-Object -Last 60 | Write-Host
+          cd solution
+          # Path MUST be the folder that contains ControlManifest.Input.xml
+          pac solution add-reference --path ../ci_pcf/CommentsControl
+
 
       - name: Build solution (Unmanaged + Managed)
         run: |
