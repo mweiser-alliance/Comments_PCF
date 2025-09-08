@@ -83,31 +83,45 @@ jobs:
           cd solution
           pac solution init --publisher-name TheAlliance --publisher-prefix ta
 
-      - name: Add PCF to solution by editing .cdsproj (no pac add-reference)
+      - name: Add PCF to solution by editing .cdsproj (namespace-safe)
         run: |
           $solutionDir = Resolve-Path ./solution
           $cdsproj = Get-ChildItem $solutionDir -Filter *.cdsproj | Select-Object -First 1
           if (-not $cdsproj) { throw "No .cdsproj found under $solutionDir" }
-
-          $manifestPath = (Resolve-Path ./ci_pcf/CommentsControl/ControlManifest.Input.xml).Path
-
+      
+          $manifestAbs = (Resolve-Path ./ci_pcf/CommentsControl/ControlManifest.Input.xml).Path
+          # Use a relative path (MSBuild-friendly)
+          $relPath = [System.IO.Path]::GetRelativePath($solutionDir.Path, $manifestAbs)
+      
           Write-Host "Using cdsproj: $($cdsproj.FullName)"
-          Write-Host "Adding PCF manifest: $manifestPath"
-
+          Write-Host "Adding PCF manifest (relative): $relPath"
+      
           [xml]$xml = Get-Content $cdsproj.FullName
           $proj = $xml.Project
-          $ig = $proj.ItemGroup | Where-Object { $_.PowerAppsComponentFrameworkProject } | Select-Object -First 1
+          $ns  = $proj.NamespaceURI
+      
+          # Helper to create namespaced elements
+          $create = { param($name) $xml.CreateElement($name, $ns) }
+      
+          # Find (or create) an ItemGroup that will host the PCF item
+          $nsmgr = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+          $nsmgr.AddNamespace("msb", $ns)
+          $ig = $xml.SelectSingleNode("//msb:ItemGroup[msb:PowerAppsComponentFrameworkProject]", $nsmgr)
           if (-not $ig) {
-            $ig = $xml.CreateElement("ItemGroup")
+            $ig = & $create "ItemGroup"
             $proj.AppendChild($ig) | Out-Null
           }
-          $pcfItem = $xml.CreateElement("PowerAppsComponentFrameworkProject")
-          $null = $pcfItem.SetAttribute("Include", $manifestPath)
+      
+          # Add <PowerAppsComponentFrameworkProject Include="..\ci_pcf\CommentsControl\ControlManifest.Input.xml" />
+          $pcfItem = & $create "PowerAppsComponentFrameworkProject"
+          $null = $pcfItem.SetAttribute("Include", $relPath)
           $ig.AppendChild($pcfItem) | Out-Null
+      
           $xml.Save($cdsproj.FullName)
+      
+          Write-Host "=== Updated cdsproj (tail) ==="
+          Get-Content $cdsproj.FullName | Select-Object -Last 60 | Write-Host
 
-          Write-Host "=== Updated cdsproj ==="
-          Get-Content $cdsproj.FullName | Write-Host
 
       - name: Build solution (Unmanaged + Managed)
         run: |
