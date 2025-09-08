@@ -59,12 +59,13 @@ jobs:
           & "$env:USERPROFILE\.dotnet\tools\pac.exe" help | Out-Host
 
 
-      - name: Scaffold clean PCF project in CI (dataset)
+      - name: Scaffold clean PCF project in CI (dataset, React)
         run: |
           mkdir ci_pcf
           cd ci_pcf
-          pac pcf init --namespace Comments --name CommentsControl --template dataset --framework none
+          pac pcf init --namespace Comments --name CommentsControl --template dataset --framework react
           Get-ChildItem -Recurse -File | Select-Object FullName | Out-Host
+
 
       - name: Copy your code/manifest/resources into the scaffold
         run: |
