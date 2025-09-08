@@ -129,16 +129,34 @@ jobs:
           $sol.Save($solPath)
           Write-Host "Updated Solution.xml -> UniqueName=ta_comments_control_redux, Display='Comments Control Redux'"
 
-      - name: Add PCF control to solution (PAC add-reference)
+      - name: Add PCF control to solution (try manifest → folder → pcfproj)
         run: |
           cd solution
           $pac = "$env:USERPROFILE\.dotnet\tools\pac.exe"
-          # Path MUST be the folder that contains ControlManifest.Input.xml
-          & $pac solution add-reference --path ../ci_pcf/CommentsControl
-          if ($LASTEXITCODE -ne 0 -and (Test-Path ../Comments.pcfproj)) {
-            Write-Warning "Folder add-reference failed; trying .pcfproj…"
-            & $pac solution add-reference --path ../Comments.pcfproj
+      
+          $pcfFolder = (Resolve-Path ../ci_pcf/CommentsControl).Path
+          $manifest  = Join-Path $pcfFolder 'ControlManifest.Input.xml'
+          $pcfProj   = (Resolve-Path ../Comments.pcfproj -ErrorAction SilentlyContinue).Path
+      
+          Write-Host "pcfFolder: $pcfFolder"
+          Write-Host "manifest : $manifest"
+          if ($pcfProj) { Write-Host "pcfproj  : $pcfProj" }
+      
+          if (!(Test-Path $manifest)) { throw "Missing $manifest" }
+      
+          # 1) Try manifest path (works on many PAC builds)
+          & $pac solution add-reference --path "$manifest"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "add-reference with manifest failed; trying folder…"
+            # 2) Try project folder
+            & $pac solution add-reference --path "$pcfFolder"
+            if ($LASTEXITCODE -ne 0 -and $pcfProj) {
+              Write-Warning "Folder failed; trying .pcfproj…"
+              # 3) Fallback: .pcfproj at repo root (if you have one)
+              & $pac solution add-reference --path "$pcfProj"
+            }
           }
+
       
 
 
