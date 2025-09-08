@@ -86,6 +86,21 @@ jobs:
           Write-Host "=== Manifest head ==="
           Get-Content "ci_pcf\CommentsControl\ControlManifest.Input.xml" -TotalCount 25 | Write-Host
 
+          - name: Create minimal .pcfproj for PAC
+            run: |
+              $projPath = "ci_pcf/CommentsControl/CommentsControl.pcfproj"
+              $content = @"
+          <Project Sdk="Microsoft.PowerApps.MSBuild.Pcf.Sdk">
+            <PropertyGroup>
+              <ControlManifest>ControlManifest.Input.xml</ControlManifest>
+            </PropertyGroup>
+          </Project>
+          "@
+          # IMPORTANT: write with no indentation so MSBuild sees it cleanly
+          Set-Content -LiteralPath $projPath -Value $content -Encoding UTF8
+          Write-Host "Created $projPath"
+
+
       - name: Build the PCF control
         working-directory: ./ci_pcf/CommentsControl
         run: |
@@ -129,36 +144,13 @@ jobs:
           $sol.Save($solPath)
           Write-Host "Updated Solution.xml -> UniqueName=ta_comments_control_redux, Display='Comments Control Redux'"
 
-      - name: Add PCF control to solution (try manifest → folder → pcfproj)
+      - name: Add PCF control to solution (.pcfproj, required by PAC ≥1.48)
         run: |
           cd solution
           $pac = "$env:USERPROFILE\.dotnet\tools\pac.exe"
-      
-          $pcfFolder = (Resolve-Path ../ci_pcf/CommentsControl).Path
-          $manifest  = Join-Path $pcfFolder 'ControlManifest.Input.xml'
-          $pcfProj   = (Resolve-Path ../Comments.pcfproj -ErrorAction SilentlyContinue).Path
-      
-          Write-Host "pcfFolder: $pcfFolder"
-          Write-Host "manifest : $manifest"
-          if ($pcfProj) { Write-Host "pcfproj  : $pcfProj" }
-      
-          if (!(Test-Path $manifest)) { throw "Missing $manifest" }
-      
-          # 1) Try manifest path (works on many PAC builds)
-          & $pac solution add-reference --path "$manifest"
-          if ($LASTEXITCODE -ne 0) {
-            Write-Warning "add-reference with manifest failed; trying folder…"
-            # 2) Try project folder
-            & $pac solution add-reference --path "$pcfFolder"
-            if ($LASTEXITCODE -ne 0 -and $pcfProj) {
-              Write-Warning "Folder failed; trying .pcfproj…"
-              # 3) Fallback: .pcfproj at repo root (if you have one)
-              & $pac solution add-reference --path "$pcfProj"
-            }
-          }
-
-      
-
+          $pcfProj = (Resolve-Path ../ci_pcf/CommentsControl/CommentsControl.pcfproj).Path
+          Write-Host "Using pcfproj: $pcfProj"
+          & $pac solution add-reference --path "$pcfProj" 
 
       - name: Build solution (Unmanaged + Managed)
         run: |
