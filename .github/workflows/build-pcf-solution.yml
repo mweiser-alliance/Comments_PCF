@@ -50,4 +50,100 @@ jobs:
           # strings.resx (if present)
           if (Test-Path "CommentsControl\strings\strings.resx") {
             New-Item -ItemType Directory -Force "ci_pcf\CommentsControl\strings" | Out-Null
-            Copy-Item -F
+            Copy-Item -Force "CommentsControl\strings\strings.resx" "ci_pcf\CommentsControl\strings\strings.resx"
+          }
+
+          # types shim (optional)
+          if (Test-Path "CommentsControl\types") {
+            Copy-Item -Recurse -Force "CommentsControl\types" "ci_pcf\CommentsControl\types"
+          }
+
+          # Ensure a local pcfconfig.json exists (helps PAC detect project shape)
+          $pcfconfig = "ci_pcf\CommentsControl\pcfconfig.json"
+          if (!(Test-Path $pcfconfig)) {
+            @"
+{
+  "outDir": "./out/controls"
+}
+"@ | Set-Content -Encoding UTF8 $pcfconfig
+          }
+
+          Write-Host "=== Manifest head ==="
+          Get-Content "ci_pcf\CommentsControl\ControlManifest.Input.xml" -TotalCount 25 | Write-Host
+
+      - name: Build the PCF control
+        working-directory: ./ci_pcf/CommentsControl
+        run: |
+          # Prefer clean install; fall back to install if no lock
+          try { npm ci } catch { npm install }
+          npm run build
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Create solution skeleton
+        run: |
+          mkdir solution
+          cd solution
+          pac solution init --publisher-name TheAlliance --publisher-prefix ta
+
+      - name: Add PCF control to solution (absolute path + markers)
+        run: |
+          cd solution
+          $ErrorActionPreference = 'Stop'
+
+          # Resolve absolute paths
+          $pcfFolder = (Resolve-Path ../ci_pcf/CommentsControl).Path
+          $pcfProj   = (Resolve-Path ../Comments.pcfproj -ErrorAction SilentlyContinue).Path
+
+          Write-Host "PCF folder cand.: $pcfFolder"
+          if ($pcfProj) { Write-Host "pcfproj cand.: $pcfProj" }
+
+          # Prove markers exist
+          $manifest = Join-Path $pcfFolder 'ControlManifest.Input.xml'
+          if (!(Test-Path $manifest)) { throw "Missing $manifest" }
+
+          $pcfconfig = Join-Path $pcfFolder 'pcfconfig.json'
+          if (!(Test-Path $pcfconfig)) {
+            Write-Warning "Missing pcfconfig.json. Creating…"
+            @"
+{
+  "outDir": "./out/controls"
+}
+"@ | Set-Content -Encoding UTF8 $pcfconfig
+          }
+
+          Get-ChildItem $pcfFolder -Force | Select-Object Name,Length | Out-Host
+
+          # Prefer folder path first; fall back to .pcfproj if needed
+          Write-Host "Trying: pac solution add-reference --path $pcfFolder"
+          pac solution add-reference --path "$pcfFolder"
+          if ($LASTEXITCODE -ne 0) {
+            if ($pcfProj) {
+              Write-Warning "Folder failed; trying pcfproj…"
+              pac solution add-reference --path "$pcfProj"
+            } else {
+              throw "add-reference failed for folder and no .pcfproj to fallback."
+            }
+          }
+
+      - name: Build solution (Unmanaged + Managed)
+        run: |
+          cd solution
+          msbuild /t:build /restore /p:Configuration=Debug
+          msbuild /t:build /restore /p:Configuration=Release /p:PackageType=Managed
+
+      - name: Upload solution zips
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcf-solution-zips
+          path: |
+            solution\bin\Debug\*.zip
+            solution\bin\Release\*.zip
+
+      - name: Dump PAC logs on failure
+        if: failure()
+        run: |
+          $logs = Get-ChildItem "$env:USERPROFILE\.dotnet\tools" -Filter pac-log.txt -Recurse -ErrorAction SilentlyContinue
+          if ($logs) { foreach ($l in $logs) { Write-Host "=== PAC LOG: $($l.FullName) ==="; Get-Content $l.FullName -Raw | Write-Host } }
+          else { Write-Host "No pac-log.txt found." }
