@@ -107,10 +107,10 @@ jobs:
           if (!(Test-Path $pcfconfig)) {
             Write-Warning "Missing pcfconfig.json. Creating…"
             @"
-{
-  "outDir": "./out/controls"
-}
-"@ | Set-Content -Encoding UTF8 $pcfconfig
+          {
+            "outDir": "./out/controls"
+          }
+          "@ | Set-Content -Encoding UTF8 $pcfconfig
           }
 
           Get-ChildItem $pcfFolder -Force | Select-Object Name,Length | Out-Host
