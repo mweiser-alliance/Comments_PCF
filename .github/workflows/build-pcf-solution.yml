@@ -32,7 +32,7 @@ jobs:
         run: |
           dotnet tool install -g Microsoft.PowerApps.CLI.Tool
           echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          pac help | Out-Host   # don't use --version (can exit non-zero)
+          pac help | Out-Host   # avoid --version (can exit non-zero)
 
       - name: Scaffold clean PCF project in CI (dataset)
         run: |
@@ -43,29 +43,22 @@ jobs:
 
       - name: Copy your code/manifest/resources into the scaffold
         run: |
-          # Required files
           Copy-Item -Force "CommentsControl\index.ts" "ci_pcf\CommentsControl\index.ts"
           Copy-Item -Force "CommentsControl\ControlManifest.Input.xml" "ci_pcf\CommentsControl\ControlManifest.Input.xml"
 
-          # strings.resx (if present)
           if (Test-Path "CommentsControl\strings\strings.resx") {
             New-Item -ItemType Directory -Force "ci_pcf\CommentsControl\strings" | Out-Null
             Copy-Item -Force "CommentsControl\strings\strings.resx" "ci_pcf\CommentsControl\strings\strings.resx"
           }
-
-          # types shim (optional)
           if (Test-Path "CommentsControl\types") {
             Copy-Item -Recurse -Force "CommentsControl\types" "ci_pcf\CommentsControl\types"
           }
 
-          # Ensure a local pcfconfig.json exists (helps PAC detect project shape)
+          # Ensure pcfconfig.json exists (helps some PAC versions)
           $pcfconfig = "ci_pcf\CommentsControl\pcfconfig.json"
           if (!(Test-Path $pcfconfig)) {
-            @"
-          {
-            "outDir": "./out/controls"
-          }
-          "@ | Set-Content -Encoding UTF8 $pcfconfig
+            $pcfconfigContent = '{ "outDir": "./out/controls" }'
+            Set-Content -Path $pcfconfig -Value $pcfconfigContent -Encoding UTF8
           }
 
           Write-Host "=== Manifest head ==="
@@ -74,9 +67,12 @@ jobs:
       - name: Build the PCF control
         working-directory: ./ci_pcf/CommentsControl
         run: |
-          # Prefer clean install; fall back to install if no lock
-          try { npm ci } catch { npm install }
-          npm run build
+          if (Test-Path package-lock.json) {
+            npm ci --no-audit --no-fund
+          } else {
+            npm install --no-audit --no-fund
+          }
+          npx pcf-scripts build
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
@@ -92,30 +88,23 @@ jobs:
           cd solution
           $ErrorActionPreference = 'Stop'
 
-          # Resolve absolute paths
           $pcfFolder = (Resolve-Path ../ci_pcf/CommentsControl).Path
           $pcfProj   = (Resolve-Path ../Comments.pcfproj -ErrorAction SilentlyContinue).Path
 
           Write-Host "PCF folder cand.: $pcfFolder"
           if ($pcfProj) { Write-Host "pcfproj cand.: $pcfProj" }
 
-          # Prove markers exist
           $manifest = Join-Path $pcfFolder 'ControlManifest.Input.xml'
           if (!(Test-Path $manifest)) { throw "Missing $manifest" }
 
           $pcfconfig = Join-Path $pcfFolder 'pcfconfig.json'
           if (!(Test-Path $pcfconfig)) {
-            Write-Warning "Missing pcfconfig.json. Creating…"
-            @"
-          {
-            "outDir": "./out/controls"
-          }
-          "@ | Set-Content -Encoding UTF8 $pcfconfig
+            $pcfconfigContent = '{ "outDir": "./out/controls" }'
+            Set-Content -Path $pcfconfig -Value $pcfconfigContent -Encoding UTF8
           }
 
           Get-ChildItem $pcfFolder -Force | Select-Object Name,Length | Out-Host
 
-          # Prefer folder path first; fall back to .pcfproj if needed
           Write-Host "Trying: pac solution add-reference --path $pcfFolder"
           pac solution add-reference --path "$pcfFolder"
           if ($LASTEXITCODE -ne 0) {
