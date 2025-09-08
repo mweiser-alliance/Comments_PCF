@@ -45,7 +45,6 @@ jobs:
         run: |
           Copy-Item -Force "CommentsControl\index.ts" "ci_pcf\CommentsControl\index.ts"
           Copy-Item -Force "CommentsControl\ControlManifest.Input.xml" "ci_pcf\CommentsControl\ControlManifest.Input.xml"
-
           if (Test-Path "CommentsControl\strings\strings.resx") {
             New-Item -ItemType Directory -Force "ci_pcf\CommentsControl\strings" | Out-Null
             Copy-Item -Force "CommentsControl\strings\strings.resx" "ci_pcf\CommentsControl\strings\strings.resx"
@@ -53,14 +52,11 @@ jobs:
           if (Test-Path "CommentsControl\types") {
             Copy-Item -Recurse -Force "CommentsControl\types" "ci_pcf\CommentsControl\types"
           }
-
-          # Ensure pcfconfig.json exists (helps some tool versions)
           $pcfconfig = "ci_pcf\CommentsControl\pcfconfig.json"
           if (!(Test-Path $pcfconfig)) {
             $pcfconfigContent = '{ "outDir": "./out/controls" }'
             Set-Content -Path $pcfconfig -Value $pcfconfigContent -Encoding UTF8
           }
-
           Write-Host "=== Manifest head ==="
           Get-Content "ci_pcf\CommentsControl\ControlManifest.Input.xml" -TotalCount 25 | Write-Host
 
@@ -83,56 +79,43 @@ jobs:
           cd solution
           pac solution init --publisher-name TheAlliance --publisher-prefix ta
 
-          - name: Set solution identity (name, display name, version)
-          run: |
-            $solPath = Resolve-Path ./solution/src/Other/Solution.xml
-            [xml]$sol = Get-Content $solPath
-        
-            # 1) UniqueName must be globally unique in your env
-            $sol.ImportExportXml.SolutionManifest.UniqueName = 'ta_comments_control_redux'
-        
-            # 2) Display name (EN-US). Create node if it doesn't exist.
-            $ln = $sol.SelectSingleNode('//LocalizedName[@languagecode="1033"]')
-            if (-not $ln) {
-              $lns = $sol.SelectSingleNode('//LocalizedNames')
-              if (-not $lns) {
-                $lns = $sol.CreateElement('LocalizedNames')
-                $sol.ImportExportXml.SolutionManifest.AppendChild($lns) | Out-Null
-              }
-              $ln = $sol.CreateElement('LocalizedName')
-              $ln.SetAttribute('languagecode','1033')
-              $lns.AppendChild($ln) | Out-Null
+      - name: Set solution identity (name, display name, version)
+        run: |
+          $solPath = Resolve-Path ./solution/src/Other/Solution.xml
+          [xml]$sol = Get-Content $solPath
+          # Unique name must not clash with anything in your env
+          $sol.ImportExportXml.SolutionManifest.UniqueName = 'ta_comments_control_redux'
+          # Display name (1033 = en-US)
+          $ln = $sol.SelectSingleNode('//LocalizedName[@languagecode="1033"]')
+          if (-not $ln) {
+            $lns = $sol.SelectSingleNode('//LocalizedNames')
+            if (-not $lns) {
+              $lns = $sol.CreateElement('LocalizedNames')
+              $sol.ImportExportXml.SolutionManifest.AppendChild($lns) | Out-Null
             }
-            $ln.SetAttribute('description','Comments Control Redux')
-        
-            # 3) Optional: bump version (format: major.minor.build.revision)
-            $sol.ImportExportXml.SolutionManifest.Version = '1.0.0.0'
-        
-            $sol.Save($solPath)
-            Write-Host "Updated Solution.xml -> UniqueName=ta_comments_control_redux, Display='Comments Control Redux', Version=1.0.0.0"
-
+            $ln = $sol.CreateElement('LocalizedName')
+            $ln.SetAttribute('languagecode','1033')
+            $lns.AppendChild($ln) | Out-Null
+          }
+          $ln.SetAttribute('description','Comments Control Redux')
+          # Optional: set/bump version
+          $sol.ImportExportXml.SolutionManifest.Version = '1.0.0.0'
+          $sol.Save($solPath)
+          Write-Host "Updated Solution.xml -> UniqueName=ta_comments_control_redux, Display='Comments Control Redux'"
 
       - name: Add PCF to solution by editing .cdsproj (namespace-safe)
         run: |
           $solutionDir = Resolve-Path ./solution
           $cdsproj = Get-ChildItem $solutionDir -Filter *.cdsproj | Select-Object -First 1
           if (-not $cdsproj) { throw "No .cdsproj found under $solutionDir" }
-      
           $manifestAbs = (Resolve-Path ./ci_pcf/CommentsControl/ControlManifest.Input.xml).Path
-          # Use a relative path (MSBuild-friendly)
           $relPath = [System.IO.Path]::GetRelativePath($solutionDir.Path, $manifestAbs)
-      
           Write-Host "Using cdsproj: $($cdsproj.FullName)"
           Write-Host "Adding PCF manifest (relative): $relPath"
-      
           [xml]$xml = Get-Content $cdsproj.FullName
           $proj = $xml.Project
           $ns  = $proj.NamespaceURI
-      
-          # Helper to create namespaced elements
           $create = { param($name) $xml.CreateElement($name, $ns) }
-      
-          # Find (or create) an ItemGroup that will host the PCF item
           $nsmgr = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
           $nsmgr.AddNamespace("msb", $ns)
           $ig = $xml.SelectSingleNode("//msb:ItemGroup[msb:PowerAppsComponentFrameworkProject]", $nsmgr)
@@ -140,17 +123,12 @@ jobs:
             $ig = & $create "ItemGroup"
             $proj.AppendChild($ig) | Out-Null
           }
-      
-          # Add <PowerAppsComponentFrameworkProject Include="..\ci_pcf\CommentsControl\ControlManifest.Input.xml" />
           $pcfItem = & $create "PowerAppsComponentFrameworkProject"
           $null = $pcfItem.SetAttribute("Include", $relPath)
           $ig.AppendChild($pcfItem) | Out-Null
-      
           $xml.Save($cdsproj.FullName)
-      
           Write-Host "=== Updated cdsproj (tail) ==="
           Get-Content $cdsproj.FullName | Select-Object -Last 60 | Write-Host
-
 
       - name: Build solution (Unmanaged + Managed)
         run: |
@@ -160,11 +138,10 @@ jobs:
 
       - name: Rename zips to friendly names
         run: |
-          $un = Get-ChildItem "solution\bin\Debug\*.zip"    | Select-Object -First 1
-          $mn = Get-ChildItem "solution\bin\Release\*.zip"  | Select-Object -First 1
+          $un = Get-ChildItem "solution\bin\Debug\*.zip"   | Select-Object -First 1
+          $mn = Get-ChildItem "solution\bin\Release\*.zip" | Select-Object -First 1
           if ($un) { Copy-Item $un.FullName "solution\bin\Comments_Control_Redux_Unmanaged.zip" -Force }
           if ($mn) { Copy-Item $mn.FullName "solution\bin\Comments_Control_Redux_Managed.zip"   -Force }
-
 
       - name: Upload solution zips
         uses: actions/upload-artifact@v4
