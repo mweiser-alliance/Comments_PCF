@@ -62,10 +62,10 @@ jobs:
           $pcfconfig = "ci_pcf\CommentsControl\pcfconfig.json"
           if (!(Test-Path $pcfconfig)) {
             @"
-{
-  "outDir": "./out/controls"
-}
-"@ | Set-Content -Encoding UTF8 $pcfconfig
+          {
+            "outDir": "./out/controls"
+          }
+          "@ | Set-Content -Encoding UTF8 $pcfconfig
           }
 
           Write-Host "=== Manifest head ==="
